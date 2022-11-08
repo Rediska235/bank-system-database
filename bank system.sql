@@ -145,3 +145,86 @@ FROM accounts
 GROUP BY bank_name, full_name, accounts.balance
 HAVING accounts.balance - SUM(bank_cards.balance) <> 0
 GO
+
+/* task 5
+Вывести кол-во банковских карточек для каждого соц статуса (2 реализации, GROUP BY и подзапросом)
+*/
+
+SELECT status_name, COUNT(bank_cards.id) AS [card count]
+FROM social_statuses
+    LEFT JOIN clients ON status_id = social_statuses.id
+    LEFT JOIN accounts ON client_id = clients.id
+    LEFT JOIN bank_cards ON account_id = accounts.id
+GROUP BY status_name
+ORDER BY 1
+GO
+
+SELECT s.status_name, 
+       (SELECT COUNT(*)
+        FROM bank_cards 
+            JOIN accounts ON account_id = accounts.id
+            JOIN clients ON client_id = clients.id
+            JOIN social_statuses ON status_id = social_statuses.id
+        WHERE social_statuses.id = s.id) AS [card count]
+FROM social_statuses as s
+ORDER BY 1
+GO
+
+/* task 6 
+Написать stored procedure которая будет добавлять по 10$ на каждый банковский аккаунт 
+для определенного соц статуса (У каждого клиента бывают разные соц. статусы. 
+Например, пенсионер, инвалид и прочее). 
+
+Входной параметр процедуры - Id социального статуса. 
+
+Обработать исключительные ситуации (например, был введен неверные номер соц. статуса. 
+Либо когда у этого статуса нет привязанных аккаунтов).
+*/
+
+CREATE PROC income_for_social_status @status_id INT
+AS
+DECLARE @max_id INT = 0;
+SELECT @max_id = MAX(id) FROM social_statuses;
+
+IF @status_id > @max_id 
+BEGIN
+    RAISERROR('Invalid index: Index greater than maximum', 16, 1);
+    RETURN;
+END
+IF @status_id < 1 
+BEGIN
+    RAISERROR('Invalid index: Index less than 1', 16, 1);
+    RETURN;
+END
+
+IF NOT EXISTS(
+    SELECT *
+    FROM accounts
+    WHERE client_id IN (SELECT id 
+                        FROM clients 
+                        WHERE status_id = @status_id))
+BEGIN
+    RAISERROR('Invalid index: Theres no accounts for that social status id', 16, 1);
+    RETURN;
+END
+
+UPDATE accounts 
+    SET balance += 10
+WHERE client_id IN (SELECT id 
+                    FROM clients 
+                    WHERE status_id = @status_id)
+
+
+GO
+
+SELECT client_id, status_id, status_name, balance
+FROM accounts
+    JOIN clients ON client_id = clients.id
+    JOIN social_statuses ON status_id = social_statuses.id
+
+EXEC income_for_social_status 5
+
+SELECT client_id, status_id, status_name, balance
+FROM accounts
+    JOIN clients ON client_id = clients.id
+    JOIN social_statuses ON status_id = social_statuses.id
