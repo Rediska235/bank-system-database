@@ -18,8 +18,8 @@ GO
 
 CREATE TABLE bank_branches(
     id INT PRIMARY KEY IDENTITY,
-    bank_id INT NOT NULL,
-    city_id INT NOt NULL
+    bank_id INT FOREIGN KEY REFERENCES banks NOT NULL,
+    city_id INT FOREIGN KEY REFERENCES cities NOT NULL,
 );
 GO
 
@@ -31,22 +31,23 @@ GO
 
 CREATE TABLE clients(
     id INT PRIMARY KEY IDENTITY,
-    status_id INT NOT NULL,
+    status_id INT FOREIGN KEY REFERENCES social_statuses NOT NULL,
     full_name VARCHAR(30) NOT NULL
 );
 GO
 
 CREATE TABLE accounts(
     id INT PRIMARY KEY IDENTITY,
-    bank_id INT NOT NULL,
-    client_id INT NOt NULL,
+    bank_id INT FOREIGN KEY REFERENCES banks NOT NULL,
+    client_id INT FOREIGN KEY REFERENCES clients NOT NULL,
     balance MONEY NOT NULL
+	CONSTRAINT unique_accounts UNIQUE (bank_id, client_id)
 );
 GO
 
 CREATE TABLE bank_cards(
     id INT PRIMARY KEY IDENTITY,
-    account_id INT NOt NULL,
+    account_id INT FOREIGN KEY REFERENCES accounts NOT NULL,
     balance MONEY NOT NULL
 );
 GO
@@ -118,18 +119,18 @@ SELECT bank_name
 FROM banks
     JOIN bank_branches ON bank_id = banks.id
     JOIN cities ON city_id = cities.id
-WHERE city_name = 'Минск'
+WHERE city_name = 'Минск';
 GO
 
 /* task 3
 Получить список карточек с указанием имени владельца, баланса и названия банка
 */
 
-SELECT full_name, bank_cards.balance, bank_name
+SELECT bank_cards.id AS card_id, full_name, bank_cards.balance AS card_balance, bank_name
 FROM bank_cards
     JOIN accounts ON account_id = accounts.id
     JOIN clients ON client_id = clients.id
-    JOIN banks ON bank_id = banks.id
+    JOIN banks ON bank_id = banks.id;
 GO
 
 /* task 4
@@ -143,20 +144,20 @@ FROM accounts
     JOIN banks ON bank_id = banks.id
     JOIN clients ON client_id = clients.id
 GROUP BY bank_name, full_name, accounts.balance
-HAVING accounts.balance - SUM(bank_cards.balance) <> 0
+HAVING accounts.balance - SUM(bank_cards.balance) <> 0;
 GO
 
 /* task 5
 Вывести кол-во банковских карточек для каждого соц статуса (2 реализации, GROUP BY и подзапросом)
 */
 
-SELECT status_name, COUNT(bank_cards.id) AS [card count]
+SELECT status_name, COUNT(bank_cards.id) AS card_count
 FROM social_statuses
     LEFT JOIN clients ON status_id = social_statuses.id
     LEFT JOIN accounts ON client_id = clients.id
     LEFT JOIN bank_cards ON account_id = accounts.id
 GROUP BY status_name
-ORDER BY 1
+ORDER BY 1;
 GO
 
 SELECT s.status_name, 
@@ -165,18 +166,16 @@ SELECT s.status_name,
             JOIN accounts ON account_id = accounts.id
             JOIN clients ON client_id = clients.id
             JOIN social_statuses ON status_id = social_statuses.id
-        WHERE social_statuses.id = s.id) AS [card count]
+        WHERE social_statuses.id = s.id) AS card_count
 FROM social_statuses as s
-ORDER BY 1
+ORDER BY 1;
 GO
 
 /* task 6 
 Написать stored procedure которая будет добавлять по 10$ на каждый банковский аккаунт 
 для определенного соц статуса (У каждого клиента бывают разные соц. статусы. 
 Например, пенсионер, инвалид и прочее). 
-
 Входной параметр процедуры - Id социального статуса. 
-
 Обработать исключительные ситуации (например, был введен неверные номер соц. статуса. 
 Либо когда у этого статуса нет привязанных аккаунтов).
 */
@@ -212,22 +211,23 @@ UPDATE accounts
     SET balance += 10
 WHERE client_id IN (SELECT id 
                     FROM clients 
-                    WHERE status_id = @status_id)
-
-
+                    WHERE status_id = @status_id);
 GO
 
-SELECT client_id, status_id, status_name, balance
+SELECT client_id, status_id, status_name, balance AS account_balance
 FROM accounts
     JOIN clients ON client_id = clients.id
-    JOIN social_statuses ON status_id = social_statuses.id
+    JOIN social_statuses ON status_id = social_statuses.id;
+GO
 
-EXEC income_for_social_status 5
+EXEC income_for_social_status 5;
+GO
 
-SELECT client_id, status_id, status_name, balance
+SELECT client_id, status_id, status_name, balance AS account_balance
 FROM accounts
     JOIN clients ON client_id = clients.id
-    JOIN social_statuses ON status_id = social_statuses.id
+    JOIN social_statuses ON status_id = social_statuses.id;
+GO
 
 /* task 7 
 Получить список доступных средств для каждого клиента. 
@@ -242,7 +242,8 @@ FROM (SELECT full_name, bank_name, (accounts.balance - SUM(bank_cards.balance)) 
           JOIN clients ON client_id = clients.id
           JOIN banks ON bank_id = banks.id
       GROUP BY full_name, bank_name, accounts.balance) AS raw_table
-GROUP BY full_name
+GROUP BY full_name;
+GO
 
 /* task 8 
 Написать процедуру которая будет переводить определённую сумму со счёта на карту этого аккаунта.  
@@ -251,12 +252,9 @@ GROUP BY full_name
 Я могу перевести 200 рублей на одну из карт, при этом баланс аккаунта останется 1000 рублей, 
 а на картах будут суммы 300 и 500 рублей соответственно. После этого я уже не смогу перевести 400 рублей 
 с аккаунта ни на одну из карт, так как останется всего 200 свободных рублей (1000-300-500). 
-
 Переводить БЕЗОПАСНО. То есть использовать транзакцию
 */
 
-DROP PROC money_order
-GO
 CREATE PROC money_order @amount MONEY, @account_id INT, @card_id INT
 AS
 BEGIN TRANSACTION remittance;  
@@ -311,11 +309,11 @@ END
 DECLARE @free_amount MONEY;
 SELECT @free_amount = accounts.balance 
 FROM accounts
-WHERE accounts.id = @account_id
+WHERE accounts.id = @account_id;
 
 SELECT @free_amount -= SUM(bank_cards.balance)
 FROM bank_cards
-WHERE account_id = @account_id
+WHERE account_id = @account_id;
 
 IF @amount > @free_amount
 BEGIN
@@ -326,22 +324,25 @@ END
 
 UPDATE bank_cards
     SET balance += @amount
-WHERE id = @card_id
+WHERE id = @card_id;
 
 COMMIT TRANSACTION remittance;  
 GO
 
-SELECT full_name, accounts.id, accounts.balance, bank_cards.id, bank_cards.balance 
+SELECT full_name, accounts.id AS account_id, accounts.balance AS account_balance, bank_cards.id AS card_id, bank_cards.balance AS card_balance
 FROM accounts
     JOIN clients ON client_id = clients.id
-    JOIN bank_cards ON account_id = accounts.id
+    JOIN bank_cards ON account_id = accounts.id;
+GO
 
-EXEC money_order 27, 1, 1
+EXEC money_order 27, 1, 1;
+GO
 
-SELECT full_name, accounts.id, accounts.balance, bank_cards.id, bank_cards.balance 
+SELECT full_name, accounts.id AS account_id, accounts.balance AS account_balance, bank_cards.id AS card_id, bank_cards.balance AS card_balance
 FROM accounts
     JOIN clients ON client_id = clients.id
-    JOIN bank_cards ON account_id = accounts.id
+    JOIN bank_cards ON account_id = accounts.id;
+GO
 
 /* task 9
 Написать триггер на таблицы Account/Cards чтобы нельзя было занести значения в поле баланс если это противоречит условиям  
@@ -377,10 +378,11 @@ BEGIN
 END
 GO
 
-SELECT accounts.id, accounts.balance, SUM(bank_cards.balance) AS cards_total
+SELECT accounts.id AS account_id, accounts.balance AS account_balance, SUM(bank_cards.balance) AS cards_total
 FROM bank_cards
     JOIN accounts ON account_id = accounts.id
-GROUP BY accounts.id, accounts.balance
+GROUP BY accounts.id, accounts.balance;
+GO
 
 UPDATE accounts
 SET balance = 290
@@ -392,8 +394,8 @@ SET balance = 178
 WHERE id = 1;
 GO
 
-SELECT accounts.id, accounts.balance, SUM(bank_cards.balance) AS cards_total
+SELECT accounts.id AS account_id, accounts.balance AS account_balance, SUM(bank_cards.balance) AS cards_total
 FROM bank_cards
     JOIN accounts ON account_id = accounts.id
-GROUP BY accounts.id, accounts.balance
-
+GROUP BY accounts.id, accounts.balance;
+GO
