@@ -3,6 +3,7 @@ CREATE DATABASE bank_system;
 GO
 
 USE bank_system;
+GO
 
 CREATE TABLE cities(
     id INT PRIMARY KEY IDENTITY,
@@ -18,8 +19,8 @@ GO
 
 CREATE TABLE bank_branches(
     id INT PRIMARY KEY IDENTITY,
-    bank_id INT FOREIGN KEY REFERENCES banks NOT NULL,
-    city_id INT FOREIGN KEY REFERENCES cities NOT NULL,
+    bank_id INT REFERENCES banks ON DELETE CASCADE NOT NULL,
+    city_id INT REFERENCES cities ON DELETE CASCADE NOT NULL,
 );
 GO
 
@@ -31,23 +32,23 @@ GO
 
 CREATE TABLE clients(
     id INT PRIMARY KEY IDENTITY,
-    status_id INT FOREIGN KEY REFERENCES social_statuses NOT NULL,
+    status_id INT REFERENCES social_statuses ON DELETE CASCADE NOT NULL,
     full_name VARCHAR(30) NOT NULL
 );
 GO
 
 CREATE TABLE accounts(
     id INT PRIMARY KEY IDENTITY,
-    bank_id INT FOREIGN KEY REFERENCES banks NOT NULL,
-    client_id INT FOREIGN KEY REFERENCES clients NOT NULL,
+    bank_id INT REFERENCES banks ON DELETE CASCADE NOT NULL,
+    client_id INT REFERENCES clients ON DELETE CASCADE NOT NULL,
     balance MONEY NOT NULL
-	CONSTRAINT unique_accounts UNIQUE (bank_id, client_id)
+    CONSTRAINT unique_accounts UNIQUE (bank_id, client_id)
 );
 GO
 
 CREATE TABLE bank_cards(
     id INT PRIMARY KEY IDENTITY,
-    account_id INT FOREIGN KEY REFERENCES accounts NOT NULL,
+    account_id INT REFERENCES accounts ON DELETE CASCADE NOT NULL,
     balance MONEY NOT NULL
 );
 GO
@@ -257,7 +258,7 @@ GO
 
 CREATE PROC money_order @amount MONEY, @account_id INT, @card_id INT
 AS
-BEGIN TRANSACTION remittance;  
+BEGIN TRANSACTION remittance;
 
 DECLARE @max_account_id INT = 0;
 SELECT @max_account_id = MAX(id) FROM accounts;
@@ -265,7 +266,7 @@ IF @account_id > @max_account_id
     OR @account_id < 1
 BEGIN
     RAISERROR('Invalid account_id', 16, 1);
-    ROLLBACK TRAN;
+    ROLLBACK TRAN remittance;
     RETURN;
 END
 
@@ -275,7 +276,7 @@ IF @card_id > @max_card_id
     OR @card_id < 1
 BEGIN
     RAISERROR('Invalid card_id', 16, 1);
-    ROLLBACK TRAN;
+    ROLLBACK TRAN remittance;
     RETURN;
 END
 
@@ -285,7 +286,7 @@ IF NOT EXISTS(
     WHERE id = @account_id)
 BEGIN
     RAISERROR('Invalid account_id: Theres no accounts for that account_id', 16, 1);
-    ROLLBACK TRAN;
+    ROLLBACK TRAN remittance;
     RETURN;
 END
 
@@ -295,14 +296,14 @@ IF NOT EXISTS(
     WHERE id = @card_id)
 BEGIN
     RAISERROR('Invalid card_id: Theres no cards for that card_id', 16, 1);
-    ROLLBACK TRAN;
+    ROLLBACK TRAN remittance;
     RETURN;
 END
 
 IF @account_id <> (SELECT account_id FROM bank_cards WHERE id = @card_id)
 BEGIN
     RAISERROR('Invalid parameters: This account doesnt have this card', 16, 1);
-    ROLLBACK TRAN;
+    ROLLBACK TRAN remittance;
     RETURN;
 END
 
@@ -318,7 +319,7 @@ WHERE account_id = @account_id;
 IF @amount > @free_amount
 BEGIN
     RAISERROR('Invalid parameters: Account doesnt have enought money', 16, 1);
-    ROLLBACK TRAN;
+    ROLLBACK TRAN remittance;
     RETURN;
 END
 
@@ -326,7 +327,7 @@ UPDATE bank_cards
     SET balance += @amount
 WHERE id = @card_id;
 
-COMMIT TRANSACTION remittance;  
+COMMIT TRANSACTION remittance;
 GO
 
 SELECT full_name, accounts.id AS account_id, accounts.balance AS account_balance, bank_cards.id AS card_id, bank_cards.balance AS card_balance
