@@ -228,3 +228,117 @@ SELECT client_id, status_id, status_name, balance
 FROM accounts
     JOIN clients ON client_id = clients.id
     JOIN social_statuses ON status_id = social_statuses.id
+
+/* task 7 
+Получить список доступных средств для каждого клиента. 
+То есть если у клиента на банковском аккаунте 60 рублей, и у него 2 карточки по 15 рублей на каждой, 
+то у него доступно 30 рублей для перевода на любую из карт
+*/
+
+SELECT full_name, SUM(available_funds) as available_funds
+FROM (SELECT full_name, bank_name, (accounts.balance - SUM(bank_cards.balance)) AS available_funds
+      FROM accounts
+          JOIN bank_cards ON account_id = accounts.id
+          JOIN clients ON client_id = clients.id
+          JOIN banks ON bank_id = banks.id
+      GROUP BY full_name, bank_name, accounts.balance) AS raw_table
+GROUP BY full_name
+
+/* task 8 
+Написать процедуру которая будет переводить определённую сумму со счёта на карту этого аккаунта.  
+При этом будем считать что деньги на счёту все равно останутся, просто сумма средств на карте увеличится. 
+Например, у меня есть аккаунт на котором 1000 рублей и две карты по 300 рублей на каждой. 
+Я могу перевести 200 рублей на одну из карт, при этом баланс аккаунта останется 1000 рублей, 
+а на картах будут суммы 300 и 500 рублей соответственно. После этого я уже не смогу перевести 400 рублей 
+с аккаунта ни на одну из карт, так как останется всего 200 свободных рублей (1000-300-500). 
+
+Переводить БЕЗОПАСНО. То есть использовать транзакцию
+*/
+
+DROP PROC money_order
+GO
+CREATE PROC money_order @amount MONEY, @account_id INT, @card_id INT
+AS
+BEGIN TRANSACTION remittance;  
+
+DECLARE @max_account_id INT = 0;
+SELECT @max_account_id = MAX(id) FROM accounts;
+IF @account_id > @max_account_id
+    OR @account_id < 1
+BEGIN
+    RAISERROR('Invalid account_id', 16, 1);
+    ROLLBACK TRAN;
+    RETURN;
+END
+
+DECLARE @max_card_id INT = 0;
+SELECT @max_card_id = MAX(id) FROM bank_cards;
+IF @card_id > @max_card_id
+    OR @card_id < 1
+BEGIN
+    RAISERROR('Invalid card_id', 16, 1);
+    ROLLBACK TRAN;
+    RETURN;
+END
+
+IF NOT EXISTS(
+    SELECT *
+    FROM accounts
+    WHERE id = @account_id)
+BEGIN
+    RAISERROR('Invalid account_id: Theres no accounts for that account_id', 16, 1);
+    ROLLBACK TRAN;
+    RETURN;
+END
+
+IF NOT EXISTS(
+    SELECT *
+    FROM bank_cards
+    WHERE id = @card_id)
+BEGIN
+    RAISERROR('Invalid card_id: Theres no cards for that card_id', 16, 1);
+    ROLLBACK TRAN;
+    RETURN;
+END
+
+IF @account_id <> (SELECT account_id FROM bank_cards WHERE id = @card_id)
+BEGIN
+    RAISERROR('Invalid parameters: This account doesnt have this card', 16, 1);
+    ROLLBACK TRAN;
+    RETURN;
+END
+
+DECLARE @free_amount MONEY;
+SELECT @free_amount = accounts.balance 
+FROM accounts
+WHERE accounts.id = @account_id
+
+SELECT @free_amount -= SUM(bank_cards.balance)
+FROM bank_cards
+WHERE account_id = @account_id
+
+IF @amount > @free_amount
+BEGIN
+    RAISERROR('Invalid parameters: Account doesnt have enought money', 16, 1);
+    ROLLBACK TRAN;
+    RETURN;
+END
+
+UPDATE bank_cards
+    SET balance += @amount
+WHERE id = @card_id
+
+COMMIT TRANSACTION remittance;  
+GO
+
+SELECT full_name, accounts.id, accounts.balance, bank_cards.id, bank_cards.balance 
+FROM accounts
+    JOIN clients ON client_id = clients.id
+    JOIN bank_cards ON account_id = accounts.id
+
+EXEC money_order 27, 1, 1
+
+SELECT full_name, accounts.id, accounts.balance, bank_cards.id, bank_cards.balance 
+FROM accounts
+    JOIN clients ON client_id = clients.id
+    JOIN bank_cards ON account_id = accounts.id
