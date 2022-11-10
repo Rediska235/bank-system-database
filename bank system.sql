@@ -342,3 +342,58 @@ SELECT full_name, accounts.id, accounts.balance, bank_cards.id, bank_cards.balan
 FROM accounts
     JOIN clients ON client_id = clients.id
     JOIN bank_cards ON account_id = accounts.id
+
+/* task 9
+Написать триггер на таблицы Account/Cards чтобы нельзя было занести значения в поле баланс если это противоречит условиям  
+(то есть нельзя изменить значение в Account на меньшее, чем сумма балансов по всем карточкам. 
+И соответственно нельзя изменить баланс карты если в итоге сумма на картах будет больше чем баланс аккаунта)
+*/
+
+CREATE TRIGGER trg_accounts ON accounts
+    AFTER UPDATE
+AS
+IF EXISTS(SELECT SUM(bank_cards.balance)
+    FROM inserted
+        JOIN bank_cards ON account_id = inserted.id
+    GROUP BY inserted.id, inserted.balance
+    HAVING inserted.balance < SUM(bank_cards.balance))
+BEGIN
+    RAISERROR('The balance on the account cannot be less than the balance on his cards', 16, 2);
+    ROLLBACK TRAN;
+END
+GO
+
+CREATE TRIGGER trg_bank_cards ON bank_cards
+    AFTER INSERT, UPDATE
+AS
+IF EXISTS(SELECT SUM(bank_cards.balance)
+    FROM bank_cards
+        JOIN accounts ON account_id = accounts.id
+    GROUP BY accounts.id, accounts.balance
+    HAVING accounts.balance < SUM(bank_cards.balance))
+BEGIN
+    RAISERROR('The balance on the cards cannot exceed the balance on the account', 16, 2);
+    ROLLBACK TRAN;
+END
+GO
+
+SELECT accounts.id, accounts.balance, SUM(bank_cards.balance) AS cards_total
+FROM bank_cards
+    JOIN accounts ON account_id = accounts.id
+GROUP BY accounts.id, accounts.balance
+
+UPDATE accounts
+SET balance = 290
+WHERE id = 1;
+GO
+
+UPDATE bank_cards
+SET balance = 178
+WHERE id = 1;
+GO
+
+SELECT accounts.id, accounts.balance, SUM(bank_cards.balance) AS cards_total
+FROM bank_cards
+    JOIN accounts ON account_id = accounts.id
+GROUP BY accounts.id, accounts.balance
+
