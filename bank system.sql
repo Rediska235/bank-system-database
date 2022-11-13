@@ -7,13 +7,13 @@ GO
 
 CREATE TABLE cities(
     id INT PRIMARY KEY IDENTITY,
-    city_name VARCHAR(30) NOT NULL
+    name VARCHAR(30) NOT NULL
 );
 GO
 
 CREATE TABLE banks(
     id INT PRIMARY KEY IDENTITY,
-    bank_name VARCHAR(30) NOT NULL
+    name VARCHAR(30) NOT NULL
 );
 GO
 
@@ -26,7 +26,7 @@ GO
 
 CREATE TABLE social_statuses(
     id INT PRIMARY KEY IDENTITY,
-    status_name VARCHAR(30) NOT NULL
+    name VARCHAR(30) NOT NULL
 );
 GO
 
@@ -54,21 +54,21 @@ CREATE TABLE bank_cards(
 GO
 
 /* database filling */
-INSERT INTO cities (city_name)
-VALUES ('Минск'),
-       ('Витебск'),
-       ('Гродно'),
-       ('Гомель'),
-       ('Могилев'),
-       ('Брест');
+INSERT INTO cities (name)
+VALUES ('Minsk'),
+       ('Vitebsk'),
+       ('Grodno'),
+       ('Gomel'),
+       ('Mogilev'),
+       ('Brest');
 GO
 
-INSERT INTO banks (bank_name)
-VALUES ('Беларусбанк'),
-       ('Белинвестбанк'),
-       ('Паритетбанк'),
-       ('Сбер Банк'),
-       ('МТБанк');
+INSERT INTO banks (name)
+VALUES ('Belarusbank'),
+       ('Belinvestbank'),
+       ('Paritetbank'),
+       ('Sber bank'),
+       ('MTBank');
 GO
 
 INSERT INTO bank_branches (bank_id, city_id)
@@ -80,20 +80,20 @@ VALUES (1, 1),
        (5, 5);
 GO
 
-INSERT INTO social_statuses (status_name)
-VALUES ('Пенсионер'),
-       ('Инвалид'),
-       ('Школьник'),
-       ('Студент'),
-       ('Рабочий');
+INSERT INTO social_statuses (name)
+VALUES ('Pensioner'),
+       ('Disabled person'),
+       ('Schoolboy'),
+       ('Student'),
+       ('Worker');
 GO
 
 INSERT INTO clients (status_id, full_name)
-VALUES (5, 'Мельников Аполлон Владимирович'),
-       (1, 'Ковалёв Максим Федорович'),
-       (5, 'Доронин Леонид Васильевич'),
-       (2, 'Карпов Артур Андреевич'),
-       (4, 'Муравьёв Александр Авдеевич');
+VALUES (5, 'Melnikov Apollon Vladimirovich'),
+       (1, 'Kovalev Maxim Fedorovich'),
+       (5, 'Doronin Leonid Vasilievich'),
+       (2, 'Karpov Artur Andreevich'),
+       (4, 'Muravyov Alexander Avdeevich');
 GO
 
 INSERT INTO accounts (bank_id, client_id, balance)
@@ -116,18 +116,18 @@ GO
 Покажи мне список банков у которых есть филиалы в городе X (выбери один из городов)
 */
 
-SELECT bank_name
+SELECT banks.name AS bank_name
 FROM banks
     JOIN bank_branches ON bank_id = banks.id
     JOIN cities ON city_id = cities.id
-WHERE city_name = 'Минск';
+WHERE cities.name = 'Minsk';
 GO
 
 /* task 3
 Получить список карточек с указанием имени владельца, баланса и названия банка
 */
 
-SELECT bank_cards.id AS card_id, full_name, bank_cards.balance AS card_balance, bank_name
+SELECT bank_cards.id AS card_id, full_name, bank_cards.balance AS card_balance, banks.name AS bank_name
 FROM bank_cards
     JOIN accounts ON account_id = accounts.id
     JOIN clients ON client_id = clients.id
@@ -139,12 +139,12 @@ GO
 суммой баланса по карточкам. В отдельной колонке вывести разницу
 */
 
-SELECT bank_name, full_name, accounts.balance AS account_balance, SUM(bank_cards.balance) AS cards_total, (accounts.balance - SUM(bank_cards.balance)) as balance_difference
+SELECT banks.name AS bank_name, full_name, accounts.balance AS account_balance, SUM(bank_cards.balance) AS cards_total, (accounts.balance - SUM(bank_cards.balance)) as balance_difference
 FROM accounts
     JOIN bank_cards ON account_id = accounts.id
     JOIN banks ON bank_id = banks.id
     JOIN clients ON client_id = clients.id
-GROUP BY bank_name, full_name, accounts.balance
+GROUP BY banks.name, full_name, accounts.balance
 HAVING accounts.balance - SUM(bank_cards.balance) <> 0;
 GO
 
@@ -152,16 +152,16 @@ GO
 Вывести кол-во банковских карточек для каждого соц статуса (2 реализации, GROUP BY и подзапросом)
 */
 
-SELECT status_name, COUNT(bank_cards.id) AS card_count
+SELECT social_statuses.name AS social_status_name, COUNT(bank_cards.id) AS card_count
 FROM social_statuses
     LEFT JOIN clients ON status_id = social_statuses.id
     LEFT JOIN accounts ON client_id = clients.id
     LEFT JOIN bank_cards ON account_id = accounts.id
-GROUP BY status_name
+GROUP BY social_statuses.name
 ORDER BY 1;
 GO
 
-SELECT s.status_name, 
+SELECT s.name AS social_status_name, 
        (SELECT COUNT(*)
         FROM bank_cards 
             JOIN accounts ON account_id = accounts.id
@@ -215,7 +215,7 @@ WHERE client_id IN (SELECT id
                     WHERE status_id = @status_id);
 GO
 
-SELECT client_id, status_id, status_name, balance AS account_balance
+SELECT client_id, status_id, social_statuses.name AS social_status_name, balance AS account_balance
 FROM accounts
     JOIN clients ON client_id = clients.id
     JOIN social_statuses ON status_id = social_statuses.id;
@@ -224,7 +224,7 @@ GO
 EXEC income_for_social_status 5;
 GO
 
-SELECT client_id, status_id, status_name, balance AS account_balance
+SELECT client_id, status_id, social_statuses.name AS social_status_name, balance AS account_balance
 FROM accounts
     JOIN clients ON client_id = clients.id
     JOIN social_statuses ON status_id = social_statuses.id;
@@ -237,12 +237,12 @@ GO
 */
 
 SELECT full_name, SUM(available_funds) as available_funds
-FROM (SELECT full_name, bank_name, (accounts.balance - SUM(bank_cards.balance)) AS available_funds
+FROM (SELECT full_name, banks.name, (accounts.balance - SUM(bank_cards.balance)) AS available_funds
       FROM accounts
           JOIN bank_cards ON account_id = accounts.id
           JOIN clients ON client_id = clients.id
           JOIN banks ON bank_id = banks.id
-      GROUP BY full_name, bank_name, accounts.balance) AS raw_table
+      GROUP BY full_name, banks.name, accounts.balance) AS raw_table
 GROUP BY full_name;
 GO
 
